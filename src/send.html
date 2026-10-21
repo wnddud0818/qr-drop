@@ -10,11 +10,11 @@ canvas{background:#fff;cursor:pointer}
 :fullscreen body>:not(canvas){display:none}
 #i{font-variant-numeric:tabular-nums;text-align:center}
 </style></head><body>
-<textarea id=t placeholder="보낼 텍스트 (파일을 고르면 파일을 보냅니다)"></textarea>
-<p><input type=file id=f><button id=g>전송 시작</button></p>
+<textarea id=t placeholder="텍스트or파일"></textarea>
+<p><input type=file id=f><button id=g>시작</button></p>
 <p><label>밀도 <input type=range id=v min=4 max=40 value=15></label><label>속도 <input type=range id=s min=1 max=30 value=6></label></p>
 <canvas id=c width=1 height=1 title="누르면 일시정지, 두 번 누르면 전체 화면"></canvas>
-<div id=i>텍스트를 쓰거나 파일을 고른 뒤 전송 시작</div>
+<div id=i>시작</div>
 <script>
 // ── QR 인코더: 영숫자 모드, 오류정정 L, 마스크 0 고정 ──
 const A='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:',
@@ -68,7 +68,7 @@ const b45=u=>{let s='';for(let i=0;i<u.length;i+=2){const x=i+1<u.length?u[i]*25
 // ── UI ──
 const $=document.getElementById.bind(document),T=$('t'),Fi=$('f'),V=$('v'),S=$('s'),C=$('c'),I=$('i'),X=C.getContext('2d');
 let data,id,n=0,cb,idx=0,tm,run=0;
-// 모듈 한 칸이 화면 픽셀 정수배가 되도록 크기를 맞춘다(캡쳐보드로 받을 때 중요)
+// 모듈 한 칸이 화면 픽셀 정수배가 되도록 크기를 맞춘다(캡쳐보드)
 const draw=([M,n])=>{const w=n+8,d=devicePixelRatio||1,f=document.fullscreenElement,k=Math.max(1,Math.min(innerWidth*(f?1:.96),innerHeight*(f?1:.72))*d/w|0);C.width=C.height=w*k;C.style.width=w*k/d+'px';X.fillStyle='#fff';X.fillRect(0,0,w*k,w*k);X.fillStyle='#000';for(let y=0;y<n;y++)for(let x=0;x<n;x++)M[y*n+x]&&X.fillRect((x+4)*k,(y+4)*k,k,k)},
 h36=(x,l)=>x.toString(36).toUpperCase().padStart(l,'0'),
 kb=b=>(b|=0)<1024?b+'B':b<1048576?(b/1024).toFixed(1)+'KB':(b/1048576).toFixed(2)+'MB',
