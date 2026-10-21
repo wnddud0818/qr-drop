@@ -1,0 +1,74 @@
+# QR 전송
+
+인터넷 없이 화면의 QR 애니메이션으로 텍스트·파일을 옮기는 도구입니다. 보내는 쪽은 HTML 파일 하나(약 6KB), 받는 쪽은 HTML 파일 하나 또는 안드로이드 앱입니다.
+
+```
+web/        바로 쓰는 완성본 (GitHub Pages로도 열 수 있음)
+  qr-send.html   송신 (압축본, 외부 라이브러리 없음)
+  qr-recv.html   수신 (jsQR 포함, 오프라인 동작)
+  index.html     두 페이지로 가는 첫 화면
+android/    수신 안드로이드 앱 (web/qr-recv.html을 그대로 띄우는 WebView 앱)
+src/        web/ 파일의 원본과 빌드 스크립트
+```
+
+## 웹으로 쓰기
+
+파일을 그냥 브라우저로 열어도 되지만, 수신 페이지는 카메라를 써야 하므로 **https**, localhost, 또는 로컬 파일로 열어야 합니다.
+
+GitHub Pages로 여는 방법:
+1. 저장소 **Settings → Pages**에서 Source를 **Deploy from a branch**, 브랜치 `main`, 폴더 `/ (root)`로 저장합니다.
+2. 1~2분 뒤 `https://<아이디>.github.io/<저장소>/web/`에서 열립니다.
+
+## 안드로이드 앱(APK) 받기
+
+저장소에 올리면 GitHub Actions가 자동으로 APK를 만듭니다(약 3~5분).
+
+- **Actions** 탭 → 완료된 `Android APK` 실행 → 맨 아래 **Artifacts**의 `qr-recv-apk`
+- 또는 `v1.0`처럼 `v`로 시작하는 태그를 올리면 **Releases**에 `qr-recv.apk`가 붙습니다. 휴대폰에서 받기에는 이쪽이 편합니다.
+
+```
+git tag v1.0
+git push origin v1.0
+```
+
+설치할 때 "출처를 알 수 없는 앱 설치"를 허용하세요. 개인용이라 디버그 키로 서명됩니다. Android Studio에서 `android/` 폴더를 열어 직접 빌드해도 됩니다.
+
+## 사용법
+
+1. 보내는 쪽에서 `qr-send.html`을 열고 텍스트를 쓰거나 파일을 고른 뒤 **전송 시작**.
+2. 받는 쪽에서 **카메라 켜기** 후 QR을 비춥니다. 받은 칸이 모자이크로 채워지고, 놓친 칸은 반복 재생 때 채워집니다.
+3. 다 받으면 복사·저장·공유할 수 있습니다.
+
+- 밀도: QR 한 장에 담는 양. 높을수록 빠르지만 인식이 어려워집니다.
+- 속도: 초당 QR 장수.
+- QR을 누르면 일시정지, 두 번 누르면 전체 화면.
+
+## 캡쳐보드
+
+HDMI 캡쳐보드는 웹캠처럼 잡힙니다. 수신에서 **카메라 켜기** 후 입력 목록에서 "(캡쳐보드)" 표시가 붙은 장치를 고르면 되고, 고른 장치는 다음에도 기억합니다. 보내는 쪽은 전체 화면으로 띄우고 **밀도 25, 속도 10** 정도에서 시작해 보세요.
+
+안드로이드에서는 OTG로 연결하면 "(외부 USB)" 또는 "(캡쳐보드)"로 나타납니다. 휴대폰이 USB 외부 카메라를 지원해야 하며, 목록에 보이지 않으면 그 기종은 시스템 차원에서 지원하지 않는 것입니다.
+
+## 고치고 다시 만들기
+
+`web/`의 HTML은 `src/`에서 생성됩니다. Node.js가 필요합니다.
+
+```
+cd src
+npm install
+npm run build   # web/qr-send.html, web/qr-recv.html 생성
+npm test        # QR 인코더를 버전 1~40 전부 만들어 다시 읽어 봄
+```
+
+안드로이드 앱은 빌드할 때 `web/` 폴더를 그대로 에셋으로 넣으므로, `web/qr-recv.html`만 고쳐서 올리면 앱에도 반영됩니다.
+
+- 앱 이름: `android/app/src/main/AndroidManifest.xml`의 `android:label`
+- 패키지명: `android/app/build.gradle.kts`의 `applicationId`
+
+## 전송 형식
+
+QR은 영숫자 모드, 오류정정 L입니다. 각 프레임은 `QX` + 전송 ID(4) + 순번(3) + 전체 장수(3)(모두 36진수) + Base45(RFC 9285) 데이터입니다. 전체 데이터는 `[메타 길이 2바이트][메타 JSON][본문]`이고, 본문은 작아질 때만 gzip으로 압축합니다.
+
+## 라이선스 고지
+
+`web/qr-recv.html`에는 [jsQR](https://github.com/cozmo/jsQR) 1.4.0(Apache-2.0)이 버전 23 정렬 패턴 오류만 고친 상태로 들어 있습니다.
