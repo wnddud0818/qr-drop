@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR 전송</title>
+<style>
+:root{--bg:#EDF0F2;--panel:#fff;--ink:#16202A;--muted:#5D6974;--line:#CDD4DA;--accent:#0E7A66;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#10151A;--panel:#182028;--ink:#E4EAEF;--muted:#8E9AA5;--line:#2A343E;--accent:#3AC4A2;color-scheme:dark}}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+main{max-width:520px;margin:0 auto;padding:40px 16px;display:flex;flex-direction:column;gap:14px}
+h1{font-size:1.4rem;margin:0 0 6px}
+a{display:block;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;color:inherit;text-decoration:none}
+a:hover,a:focus-visible{border-color:var(--accent);outline:none}
+a b{display:block;font-size:1.1rem;color:var(--accent)}
+a span{color:var(--muted);font-size:.92rem}
+</style>
+</head>
+<body>
+<main>
+  <h1>QR 전송</h1>
+  <a href="qr-send.html"><b>보내기</b><span>텍스트나 파일을 QR 애니메이션으로 띄웁니다.</span></a>
+  <a href="qr-recv.html"><b>받기</b><span>카메라나 캡쳐보드로 QR을 읽어 원래 파일로 되돌립니다.</span></a>
+</main>
+</body>
+</html>

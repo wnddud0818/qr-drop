@@ -1,0 +1,13 @@
+{
+  "name": "qr-transfer-build",
+  "private": true,
+  "description": "web/qr-send.html, web/qr-recv.html 생성",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node test.js"
+  },
+  "devDependencies": {
+    "jsqr": "1.4.0",
+    "terser": "5.31.0"
+  }
+}
