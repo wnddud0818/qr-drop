@@ -150,6 +150,25 @@ test('늦게 열린 휴대폰 카메라가 USB 입력을 덮어쓰지 않는다'
   assert.equal(app.elements.get('cam').classList.contains('usb'), true);
 });
 
+test('이전 USB 프레임 처리 중 재연결해도 새 연결을 막지 않는다', async () => {
+  const app = await setup();
+  await app.start(device.id);
+  const old = app.calls.at(-1)[2];
+  let complete;
+  app.context.detector = { detect: () => new Promise(resolve => { complete = resolve; }) };
+  app.run('det = detector');
+  app.context.onUsbFrame(old, 'old', 1280, 720);
+  const oldProcessing = app.images.at(-1).onload();
+  await app.start(device.id);
+  const current = app.calls.at(-1)[2];
+  assert.equal(app.context.onUsbFrame(current, 'new', 1280, 720), true);
+  complete([{ rawValue: 'QXABCD000001BB8' }]);
+  await oldProcessing;
+  assert.equal(app.run('cur'), null);
+  assert.equal(app.context.onUsbFrame(current, 'duplicate', 1280, 720), false);
+  app.images.at(-1).onerror();
+});
+
 test('일반 브라우저의 카메라 입력도 유지된다', async () => {
   const app = await setup({ bridge: false });
   await app.start('phone');

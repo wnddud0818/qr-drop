@@ -101,7 +101,7 @@ let stream = null, det = null, loopToken = 0;
 const app = window.AndroidBridge || null;   // 안드로이드 앱(WebView) 안에서 실행될 때만 존재
 const hasUsb = !!(app && app.listUsbCameras && app.startUsbCamera);
 const usbPreview = $('usbPreview'), usbContext = usbPreview.getContext('2d');
-let usbActive = false, usbId = '', usbFrameBusy = false, nativeDevices = [], deviceListToken = 0;
+let usbActive = false, usbId = '', usbFrameBusy = false, usbFrameSession = 0, nativeDevices = [], deviceListToken = 0;
 window.appPause = () => { stopCam(); };
 function toB64(u8) {
   let s = '';
@@ -137,7 +137,7 @@ const tagOf = label => CAPTURE_RE.test(label || '') ? '캡쳐보드' : /external
 function stopCam() {
   loopToken++;
   if (hasUsb) app.stopUsbCamera();
-  usbActive = false; usbId = '';
+  usbActive = false; usbId = ''; usbFrameBusy = false;
   if (stream) stream.getTracks().forEach(t => t.stop());
   stream = null; vid.srcObject = null;
   cam.classList.remove('on', 'aim', 'usb');
@@ -264,9 +264,12 @@ window.onUsbError = (session, message) => {
 };
 window.onUsbFrame = (session, b64, w, h) => {
   if (session !== loopToken || !usbActive || usbFrameBusy) return false;
-  usbFrameBusy = true;
+  usbFrameBusy = true; usbFrameSession = session;
   const image = new Image();
-  const finish = () => { usbFrameBusy = false; app.usbFrameDone(session); };
+  const finish = () => {
+    if (usbFrameSession === session) usbFrameBusy = false;
+    app.usbFrameDone(session);
+  };
   image.onload = async () => {
     try {
       if (session !== loopToken || !usbActive) return;
@@ -320,6 +323,7 @@ async function scanSource(source, w, h, session = loopToken) {
     }
     catch (e) { det = null; engine = 'jsQR'; footer(); }
   }
+  if (session !== loopToken) return;
   if (w !== lastW || h !== lastH) { roi = null; lastW = w; lastH = h; }
   let sx, sy, sw, sh, max;
   if (roi) { ({ sx, sy, sw, sh } = roi); max = 1400; }
