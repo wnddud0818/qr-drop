@@ -36,6 +36,8 @@ android {
 }
 
 dependencies {
+    // UVC의 AppCompat 의존성이 가져오는 구형 jdk7/jdk8 stdlib을 같은 버전으로 맞춘다.
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.8.22"))
     implementation("androidx.webkit:webkit:1.11.0")
     implementation("androidx.core:core:1.13.1")
     implementation("com.herohan:UVCAndroid:1.0.13")
