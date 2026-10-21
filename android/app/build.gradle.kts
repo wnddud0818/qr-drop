@@ -10,8 +10,8 @@ android {
         applicationId = "com.example.qrrecv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
     }
 
     buildTypes {
@@ -38,4 +38,5 @@ android {
 dependencies {
     implementation("androidx.webkit:webkit:1.11.0")
     implementation("androidx.core:core:1.13.1")
+    implementation("com.herohan:UVCAndroid:1.0.13")
 }

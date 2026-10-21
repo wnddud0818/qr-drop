@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 복합 장치도 비디오 인터페이스(class 14)로 매칭된다. -->
+    <usb-device class="14" />
+</resources>

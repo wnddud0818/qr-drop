@@ -18,6 +18,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Test QR and USB input flows
+        working-directory: src
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

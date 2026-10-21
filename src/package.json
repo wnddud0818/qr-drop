@@ -4,7 +4,7 @@
   "description": "web/qr-send.html, web/qr-recv.html 생성",
   "scripts": {
     "build": "node build.js",
-    "test": "node test.js"
+    "test": "node test.js && node --test test-usb.js"
   },
   "devDependencies": {
     "jsqr": "1.4.0",

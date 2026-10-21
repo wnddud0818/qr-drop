@@ -22,7 +22,8 @@ main{max-width:560px;margin:0 auto;padding:14px 14px 40px;display:flex;flex-dire
 h1{font-size:1.05rem;font-weight:650;margin:0;letter-spacing:-.01em}
 
 .cam{position:relative;width:100%;aspect-ratio:4/3;margin:0 auto;background:var(--cam);border-radius:14px;overflow:hidden}
-.cam video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.cam video,.cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
+.cam.usb video,.cam:not(.usb) canvas{display:none}
 .cam .guide{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);aspect-ratio:1;height:92%;border:2px solid rgba(255,255,255,.55);border-radius:10px;pointer-events:none}
 .cam .empty{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:#AEB8C1;font-size:.95rem}
 .cam.on .empty{display:none}
@@ -62,6 +63,7 @@ footer{color:var(--muted);font-size:.8rem}
 
   <div class="cam" id="cam">
     <video id="vid" playsinline muted></video>
+    <canvas id="usbPreview" aria-label="USB 캡쳐보드 영상"></canvas>
     <div class="guide"></div>
     <div class="empty">카메라나 캡쳐보드를 켜고 송신 화면의 QR을 비추세요</div>
   </div>
@@ -98,7 +100,10 @@ const wctx = work.getContext('2d', { willReadFrequently: true });
 
 let stream = null, det = null, loopToken = 0;
 const app = window.AndroidBridge || null;   // 안드로이드 앱(WebView) 안에서 실행될 때만 존재
-window.appPause = () => { if (stream) stopCam(); };
+const hasUsb = !!(app && app.listUsbCameras && app.startUsbCamera);
+const usbPreview = $('usbPreview'), usbContext = usbPreview.getContext('2d');
+let usbActive = false, usbId = '', usbFrameBusy = false, nativeDevices = [], deviceListToken = 0;
+window.appPause = () => { stopCam(); };
 function toB64(u8) {
   let s = '';
   for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
@@ -132,33 +137,50 @@ const tagOf = label => CAPTURE_RE.test(label || '') ? '캡쳐보드' : /external
 
 function stopCam() {
   loopToken++;
+  if (hasUsb) app.stopUsbCamera();
+  usbActive = false; usbId = '';
   if (stream) stream.getTracks().forEach(t => t.stop());
   stream = null; vid.srcObject = null;
-  cam.classList.remove('on', 'aim');
+  cam.classList.remove('on', 'aim', 'usb');
   camBtn.textContent = '카메라 켜기';
   inputInfo = ''; footer();
 }
 
 async function startCam(deviceId) {
+  const requested = deviceId ?? (camSel.value || store.get());
   stopCam();
+  const my = loopToken;
+  if (hasUsb) {
+    await listDevices(requested);
+    if (my !== loopToken) return;
+    deviceId = camSel.value;
+    if (deviceId.startsWith('usb:')) {
+      usbActive = true; usbId = deviceId; roi = null;
+      camBtn.textContent = '연결 취소';
+      say('USB 캡쳐보드 연결 중입니다. 카메라·USB 접근 권한을 요청하면 허용하세요.');
+      app.startUsbCamera(deviceId, my);
+      return;
+    }
+  } else deviceId = requested;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     say('이 페이지에서는 카메라를 쓸 수 없습니다. https, localhost, 또는 로컬 파일로 여세요. 이미지에서 읽기는 쓸 수 있습니다.', true);
     return;
   }
-  deviceId = deviceId || store.get();
   const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
   const open = id => navigator.mediaDevices.getUserMedia({
     audio: false,
     video: id ? { deviceId: { exact: id }, ...size } : { facingMode: { ideal: 'environment' }, ...size }
   });
+  let opened;
   try {
-    try { stream = await open(deviceId); }
+    try { opened = await open(deviceId); }
     catch (e) {
       // 저장해 둔 장치가 빠져 있으면 기본 카메라로
-      if (deviceId && (e.name === 'OverconstrainedError' || e.name === 'NotFoundError')) { store.set(''); stream = await open(''); }
+      if (deviceId && (e.name === 'OverconstrainedError' || e.name === 'NotFoundError')) { store.set(''); opened = await open(''); }
       else throw e;
     }
   } catch (e) {
+    if (my !== loopToken) return;
     const why = {
       NotAllowedError: '권한이 거부되었습니다. 브라우저 설정에서 카메라를 허용하세요.',
       NotReadableError: '다른 프로그램(OBS, 화상회의 앱 등)이 장치를 쓰고 있습니다. 그 프로그램을 닫고 다시 켜세요.',
@@ -167,8 +189,11 @@ async function startCam(deviceId) {
     say('입력 장치를 열지 못했습니다: ' + why, true);
     return;
   }
+  if (my !== loopToken) { opened.getTracks().forEach(t => t.stop()); return; }
+  stream = opened;
   vid.srcObject = stream;
   try { await vid.play(); } catch (e) {}
+  if (my !== loopToken) return;
   const st = stream.getVideoTracks()[0].getSettings();
   cam.classList.add('on');
   cam.classList.toggle('aim', st.facingMode === 'environment');   // 조준 네모는 휴대폰 후면 카메라일 때만
@@ -177,7 +202,6 @@ async function startCam(deviceId) {
   await listDevices();
   if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {});
   roi = null;
-  const my = ++loopToken;
   const next = () => vid.requestVideoFrameCallback ? vid.requestVideoFrameCallback(step) : requestAnimationFrame(step);
   const step = async () => {
     if (my !== loopToken) return;
@@ -187,28 +211,81 @@ async function startCam(deviceId) {
   next();
 }
 
-async function listDevices() {
-  let devs;
+async function listDevices(preferred) {
+  const request = ++deviceListToken;
+  let devs = [], usb = [];
+  if (hasUsb) {
+    try { usb = JSON.parse(app.listUsbCameras()); } catch (e) { say('USB 장치 목록을 읽지 못했습니다.', true); }
+  }
   try { devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); }
-  catch (e) { return; }
+  catch (e) { /* WebView 목록이 없어도 네이티브 USB 입력은 사용할 수 있다. */ }
+  if (request !== deviceListToken) return;
+  nativeDevices = usb;
   const curId = stream ? stream.getVideoTracks()[0].getSettings().deviceId || '' : '';
+  const wanted = preferred ?? (usbActive ? usbId : stream ? curId : camSel.value || store.get() || usb[0]?.id || '');
   camSel.innerHTML = '';
+  usb.forEach(d => camSel.add(new Option(d.label, d.id)));
+  if (hasUsb) camSel.add(new Option('휴대폰 카메라 (자동)', ''));
   devs.forEach((d, i) => {
+    if (hasUsb && !d.deviceId) return;
     const tag = tagOf(d.label);
     camSel.add(new Option((d.label || '카메라 ' + (i + 1)) + (tag ? ' (' + tag + ')' : ''), d.deviceId));
   });
-  camSel.value = curId;
+  camSel.value = wanted;
   if (camSel.selectedIndex < 0) camSel.selectedIndex = 0;
-  camSel.hidden = devs.length < 2;
+  camSel.hidden = camSel.options.length < 2;
   const ext = devs.find(d => tagOf(d.label)), now = devs.find(d => d.deviceId === curId);
-  if (stream && ext && !(now && tagOf(now.label)))
+  if (stream && usb.length) say('USB 캡쳐보드가 연결되어 있습니다. 위 입력 목록에서 고르세요.');
+  else if (stream && ext && !(now && tagOf(now.label)))
     say(tagOf(ext.label) + '로 보이는 장치가 있습니다: ' + ext.label + '. 위 입력 목록에서 고르세요.');
 }
 if (navigator.mediaDevices && navigator.mediaDevices.addEventListener)
-  navigator.mediaDevices.addEventListener('devicechange', () => { if (stream) listDevices(); });
+  navigator.mediaDevices.addEventListener('devicechange', () => { if (stream || hasUsb) listDevices(); });
 
-function fitPreview() {
-  const w = vid.videoWidth, h = vid.videoHeight;
+window.onUsbDevicesChanged = async () => {
+  await listDevices();
+  if (usbActive && !nativeDevices.some(d => d.id === usbId)) {
+    stopCam();
+    say('USB 캡쳐보드가 분리되었습니다. 다시 연결하고 카메라를 켜세요.', true);
+  }
+};
+window.onUsbStarted = (session, w, h) => {
+  if (session !== loopToken || !usbActive) return;
+  cam.classList.add('on', 'usb');
+  cam.classList.remove('aim');
+  camBtn.textContent = '카메라 끄기';
+  store.set(usbId);
+  fitPreview(w, h);
+  say('');
+};
+window.onUsbError = (session, message) => {
+  if (session !== loopToken || !usbActive) return;
+  stopCam();
+  say(message, true);
+};
+window.onUsbFrame = (session, b64, w, h) => {
+  if (session !== loopToken || !usbActive || usbFrameBusy) return false;
+  usbFrameBusy = true;
+  const image = new Image();
+  const finish = () => { usbFrameBusy = false; app.usbFrameDone(session); };
+  image.onload = async () => {
+    try {
+      if (session !== loopToken || !usbActive) return;
+      if (usbPreview.width !== w || usbPreview.height !== h) { usbPreview.width = w; usbPreview.height = h; }
+      usbContext.drawImage(image, 0, 0, w, h);
+      await scanSource(usbPreview, w, h);
+    } catch (e) { /* 다음 프레임에서 다시 시도한다. */ }
+    finally { finish(); }
+  };
+  image.onerror = finish;
+  image.src = 'data:image/jpeg;base64,' + b64;
+  return true;
+};
+if (hasUsb) listDevices();
+
+function fitPreview(width, height) {
+  const w = typeof width === 'number' ? width : vid.videoWidth;
+  const h = typeof height === 'number' ? height : vid.videoHeight;
   if (!w || !h) return;
   const r = w / h;
   cam.style.aspectRatio = w + '/' + h;
@@ -217,13 +294,13 @@ function fitPreview() {
   if (r >= 1) { g.style.height = '92%'; g.style.width = 'auto'; }
   else { g.style.width = '92%'; g.style.height = 'auto'; }
   const fr = stream && stream.getVideoTracks()[0].getSettings().frameRate;
-  inputInfo = w + '×' + h + (fr ? ' ' + Math.round(fr) + 'fps' : '');
+  inputInfo = (usbActive ? 'USB ' : '') + w + '×' + h + (fr ? ' ' + Math.round(fr) + 'fps' : '');
   footer();
 }
 vid.addEventListener('loadedmetadata', fitPreview);
 vid.addEventListener('resize', fitPreview);
 
-camBtn.onclick = () => stream ? stopCam() : startCam();
+camBtn.onclick = () => stream || usbActive ? stopCam() : startCam();
 camSel.onchange = () => { store.set(camSel.value); startCam(camSel.value); };
 
 // jsQR 스캔 영역: QR을 한 번 찾으면 그 주변만 원본 해상도로 읽는다(빠르고 촘촘한 QR도 잘 읽힘).
@@ -232,11 +309,18 @@ let roi = null, roiMiss = 0, flip = 0, lastW = 0, lastH = 0;
 
 async function scanVideo() {
   if (vid.readyState < 2 || !vid.videoWidth) return;
+  await scanSource(vid, vid.videoWidth, vid.videoHeight);
+}
+
+async function scanSource(source, w, h, session = loopToken) {
   if (det) {
-    try { (await det.detect(vid)).forEach(r => take(r.rawValue)); return; }
+    try {
+      const results = await det.detect(source);
+      if (session === loopToken) results.forEach(r => take(r.rawValue));
+      return;
+    }
     catch (e) { det = null; engine = 'jsQR'; footer(); }
   }
-  const w = vid.videoWidth, h = vid.videoHeight;
   if (w !== lastW || h !== lastH) { roi = null; lastW = w; lastH = h; }
   let sx, sy, sw, sh, max;
   if (roi) { ({ sx, sy, sw, sh } = roi); max = 1400; }
@@ -244,7 +328,7 @@ async function scanVideo() {
   else { const sq = Math.min(w, h); sx = (w - sq) / 2; sy = (h - sq) / 2; sw = sh = sq; max = 1000; }
   const k = Math.min(1, max / Math.max(sw, sh)), tw = Math.round(sw * k), th = Math.round(sh * k);
   work.width = tw; work.height = th;
-  wctx.drawImage(vid, sx, sy, sw, sh, 0, 0, tw, th);
+  wctx.drawImage(source, sx, sy, sw, sh, 0, 0, tw, th);
   const r = jsQR(wctx.getImageData(0, 0, tw, th).data, tw, th, { inversionAttempts: 'dontInvert' });
   if (r) {
     const L = r.location, ps = [L.topLeftCorner, L.topRightCorner, L.bottomLeftCorner, L.bottomRightCorner];

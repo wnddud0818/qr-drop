@@ -46,6 +46,9 @@ public class MainActivity extends Activity {
     private PermissionRequest pendingPermission;
     private ValueCallback<Uri[]> pendingPick;
     private byte[] pendingSave;
+    private UsbCapture usb;
+    private String pendingUsbDevice;
+    private int pendingUsbSession;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,6 +57,7 @@ public class MainActivity extends Activity {
 
         web = new WebView(this);
         setContentView(web);
+        usb = new UsbCapture(this, web);
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -76,6 +80,11 @@ public class MainActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 // 앱 화면 밖으로 이동하지 않음
                 return !HOST.equals(request.getUrl().getHost());
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                web.evaluateJavascript("window.onUsbDevicesChanged && window.onUsbDevicesChanged()", null);
             }
         });
 
@@ -123,29 +132,45 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    protected void onPause() {
-        super.onPause();
+    protected void onStart() {
+        super.onStart();
+        usb.watch();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
         // 백그라운드로 가면 카메라를 놓아준다. 돌아오면 '카메라 켜기'를 다시 누르면 된다.
+        // USB 권한 팝업의 onPause에서는 연결 요청을 취소하면 안 된다.
+        pendingUsbDevice = null;
+        usb.unwatch();
         web.evaluateJavascript("window.appPause && window.appPause()", null);
     }
 
     @Override
     protected void onDestroy() {
         if (pendingPermission != null) pendingPermission.deny();
+        usb.destroy();
         web.destroy();
         super.onDestroy();
     }
 
     @Override
     public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
-        if (code != REQ_CAMERA || pendingPermission == null) return;
-        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
-            pendingPermission.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
-        } else {
-            pendingPermission.deny();
-            toast("카메라 권한이 없어 스캔할 수 없습니다");
+        super.onRequestPermissionsResult(code, permissions, results);
+        if (code != REQ_CAMERA) return;
+        boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
+        if (pendingPermission != null) {
+            if (granted) pendingPermission.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+            else pendingPermission.deny();
         }
         pendingPermission = null;
+        if (pendingUsbDevice != null) {
+            String device = pendingUsbDevice;
+            pendingUsbDevice = null;
+            if (granted) usb.start(device, pendingUsbSession);
+            else usb.error(pendingUsbSession, "USB 비디오에도 카메라 권한이 필요합니다. 앱 설정에서 카메라 접근을 허용하세요.");
+        } else if (!granted) toast("카메라 권한이 없어 스캔할 수 없습니다");
     }
 
     @Override
@@ -193,6 +218,40 @@ public class MainActivity extends Activity {
 
     /** 페이지의 JavaScript에서 window.AndroidBridge 로 호출된다. (백그라운드 스레드) */
     private class Bridge {
+
+        @JavascriptInterface
+        public String listUsbCameras() {
+            return usb.deviceList();
+        }
+
+        @JavascriptInterface
+        public void startUsbCamera(String deviceId, int session) {
+            runOnUiThread(() -> {
+                if (isDestroyed() || isFinishing()) return;
+                pendingUsbDevice = null;
+                usb.stop();
+                if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    usb.start(deviceId, session);
+                } else {
+                    pendingUsbDevice = deviceId;
+                    pendingUsbSession = session;
+                    requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAMERA);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void stopUsbCamera() {
+            runOnUiThread(() -> {
+                pendingUsbDevice = null;
+                usb.stop();
+            });
+        }
+
+        @JavascriptInterface
+        public void usbFrameDone(int session) {
+            usb.frameDone(session);
+        }
 
         @JavascriptInterface
         public void saveFile(String b64, String name, String mime) {
